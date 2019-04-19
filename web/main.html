@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title></title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Compiled and minified CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+    <!--Import Google Icon Font-->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js" integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8=" crossorigin="anonymous"></script>
+    <!-- Compiled and minified JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+    <!-- vue JS -->
+    <script src="https://cdn.jsdelivr.net/npm/vue"></script>
+    <!-- read XLSX -->
+    <script src="/static/js/sheetjs/xlsx.full.min.js"></script>
+    <!-- handson table -->
+    <script src="/static/js/handsontable/handsontable.full.min.js"></script>
+    <link rel="stylesheet" href="/static/js/handsontable/handsontable.full.min.css">
+    <!-- SocketIO -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/1.4.5/socket.io.min.js"></script>
+    <!-- chart.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.7.3/Chart.min.js"></script>
+    <style>
+    .spinner {
+            width: 100px;
+            height: 100px;
+            background-color: #333;
+            margin-left:45%;
+            margin-top:20%;
+            -webkit-animation: sk-rotateplane 2s infinite ease-in-out;
+            animation: sk-rotateplane 2s infinite ease-in-out;
+        }
+
+        @-webkit-keyframes sk-rotateplane {
+          0% { -webkit-transform: perspective(120px) }
+          50% { -webkit-transform: perspective(120px) rotateY(180deg) }
+          100% { -webkit-transform: perspective(120px) rotateY(180deg)  rotateX(180deg) }
+        }
+
+        @keyframes sk-rotateplane {
+          0% { 
+            transform: perspective(120px) rotateX(0deg) rotateY(0deg);
+            -webkit-transform: perspective(120px) rotateX(0deg) rotateY(0deg) 
+          } 50% { 
+            transform: perspective(120px) rotateX(-180.1deg) rotateY(0deg);
+            -webkit-transform: perspective(120px) rotateX(-180.1deg) rotateY(0deg) 
+          } 100% { 
+            transform: perspective(120px) rotateX(-180deg) rotateY(-179.9deg);
+            -webkit-transform: perspective(120px) rotateX(-180deg) rotateY(-179.9deg);
+          }
+        }
+    </style>
+    <script>
+        //var csv is the CSV file with headers 
+        function csvJSON(csv){
+            var lines=csv.split("\n"); 
+            var result = {}; 
+            var headers=lines[0].split(",");
+            
+            for(var i=0; i<headers.length;i++){
+                result[headers[i]] = []
+            }
+            
+            for(var i=1;i<lines.length;i++){
+                var obj = {}; 
+                var currentline=lines[i].split(","); 
+
+                for(var j=0;j<headers.length;j++){ 
+                    result[headers[j]].push(currentline[j])
+                    
+                }
+            } 
+            return result;
+        } 
+
+        var socketMan = socketMan;
+        var step1Vue = null;
+        var step2Vue = null;
+        var step3Vue = null;
+        var step4Vue = null;
+        var step5Vue = null;
+        
+        $(function() {
+            socketMan = {
+                socket:null,
+                conn:function(host){
+                    socketMan.socket = io(host);
+                    
+                    socketMan.on('connection', function(data){
+                        if(data.type == 'connected'){
+                            socketMan.emit('connection', {
+                                type: 'join',
+                                room: 'admin'
+                            });
+                        }
+                    });
+                },
+                on:function(onStr,callBack){
+                    socketMan.socket.on(onStr, callBack);
+                },
+                emit:function(emitStr, data){
+                    socketMan.socket.emit(emitStr, data);
+                }
+            }
+            
+            /* 스탭1 목적 선택하기 */
+            step1Vue = new Vue({
+                el:"#step1",  // 태그 SELECTOR
+                delimiters: ['${', '}'], // 
+                data:{                   // 여기에 존재하는 데이터들이 변하면 알아서 돔을 다시 그림 AND updated 함수 실행
+                    codeList:[],
+                    codeLength:0,
+                    selected:{code:""},
+                },
+                // 데이터가 변동 되었을 시 실행되는 라이프사이클
+                updated:function(){
+                    console.log("test");
+                },
+                // vue에서 쓰고싶은 메소드 모음
+                methods:{
+                    clear:function(){
+                        $("#step1").css("display","block");
+                        $("#step1").animate({
+                            "margin-left": "0%",
+                            "margin-right": "0%",
+                        }, 600);
+                    },
+                    addEvents:function(){
+                        $("#step1 .card").off().click(function() {
+                            var selected = $(this).data("code");
+                            step1Vue.selected.code = selected;
+
+                            $("#step1 .btn-floating").removeClass("scale-in");
+                            $("#step1 .btn-floating").addClass("scale-out");
+                            $("#step1 .card").removeClass("lighten-2")
+                            $("#step1 .card").addClass("lighten-4")
+
+                            $(this).addClass("lighten-2");
+                            $(this).find(".btn-floating").removeClass("scale-out");
+                            $(this).find(".btn-floating").addClass("scale-in");
+                        });
+
+                        $("#nextStep1").off().click(function() {
+                            $("#step1").animate({
+                                "margin-left": "-100%",
+                                "margin-right": "100%",
+                            }, 600).promise().then(function(){
+                                $("#step1").css("display","none");
+                                step2Vue.init(step1Vue.getSelectedCode());
+                            });
+                        });
+                    },
+                    getSelectedCode:function(){
+                        var code = {};
+                        var selected = this.selected.code;
+                        
+                        this.codeList.forEach(function(data){
+                            if(data.code == selected)
+                                code = data;
+                        });
+                        
+                        return code;
+                    },
+                },
+                //최초 vue가 만들어졌을떄
+                created:function(){
+                    this.codeList = [
+                        {code:'NUMERICAL', name:'수치예측', desc:'', color:'cyan'},
+                        {code:'CLASSIFI', name:'분류', desc:'', color:'light-blue'},
+                        {code:'CLUSTER', name:'군집화', desc:'', color:'purple'},
+                        {code:'ANOMALY', name:'이상탐지', desc:'', color:'green'},
+                    ]
+
+                    this.codeLength = this.codeList.length;
+                },
+                // 실제 DOM에 들어갔을떄(최초)
+                mounted:function(){
+                    this.clear();
+                    this.addEvents();
+                }
+            });
+            
+            /* 스탭2 기법선택하기 */
+            step2Vue = new Vue({
+                el:"#step2",
+                delimiters: ['${', '}'],
+                data:{
+                    purCode:{},
+                    codeList:[],
+                    codeLength:0,
+                    selected:{code:""},
+                },
+                updated:function(){
+                    this.addEvents();
+                },
+                methods:{
+                    clear:function(){
+                        $("#step2").css("display","block");
+
+                        $("#step2").animate({
+                            "margin-left": "0px",
+                            "margin-right": "0px",
+                        }, 600);
+                    },
+                    addEvents:function(){
+                        $("#step2 .card").off().click(function() {
+                            step2Vue.selected.code = $(this).data("code");
+
+                            $("#step2 .btn-floating").removeClass("scale-in");
+                            $("#step2 .btn-floating").addClass("scale-out");
+                            $("#step2 .card").removeClass("lighten-2")
+                            $("#step2 .card").addClass("lighten-4")
+
+                            $(this).addClass("lighten-2");
+                            $(this).find(".btn-floating").removeClass("scale-out");
+                            $(this).find(".btn-floating").addClass("scale-in");
+                        });
+
+                        $("#beforeStep2").off().click(function() {
+                            $("#step2").animate({
+                                "margin-left": "100%",
+                                "margin-right": "-100%",
+                            }, 600).promise().then(function(){
+                                $("#step2").css("display","none");
+                                step1Vue.clear();
+                            });
+                        });
+                        
+                        $("#nextStep2").off().click(function() {
+                            $("#step2").animate({
+                                "margin-left": "-100%",
+                                "margin-right": "100%",
+                            }, 600).promise().then(function(){
+                                $("#step2").css("display","none");
+                                step3Vue.init(step2Vue.purCode, step2Vue.getSelectedCode());
+                            });
+                        });
+                    },
+                    init:function(purCode){
+                        var codeList = [];
+                        if(purCode.code == 'NUMERICAL') {
+                            codeList.push({code:'REGRESS', name:'선형회귀', desc:'', deep:false})
+                            codeList.push({code:'DEEPLR', name:'딥러닝', desc:'', deep:true})
+                            codeList.push({code:'MOVAVG', name:'이동평균', desc:'', deep:false})
+                        } else if(purCode.code == 'CLASSIFI') {
+                            codeList.push({code:'DEEPLR', name:'딥러닝', desc:'', deep:true})
+                        } else if(purCode.code == 'CLUSTER') {
+                            codeList.push({code:'DEEPLR', name:'딥러닝', desc:'', deep:true})
+                        } else if(purCode.code == 'ANOMALY'){
+                            codeList.push({code:'DEEPLR', name:'딥러닝', desc:'', deep:true})
+                        }
+                        
+                        this.purCode = purCode;
+                        this.codeList = codeList;
+                        this.codeLength = codeList.length;
+                        this.selected.code = "";
+                        
+                        this.clear();
+                        this.addEvents();
+                    },
+                    getSelectedCode:function(){
+                        var code = {};
+                        var selected = this.selected.code;
+                        
+                        this.codeList.forEach(function(data){
+                            if(data.code == selected)
+                                code = data;
+                        });
+                        
+                        return code;
+                    },
+                },
+            });
+            
+            /* 스탭3 데이터셋 만들기 */
+            step3Vue = new Vue({
+                el:"#step3",
+                delimiters: ['${', '}'],
+                data:{
+                    workbook:{},
+                    sheetName:"",
+                    headerRow:1,
+                    sheetData:[],
+                    headerData:[],
+                    purCode:{},
+                    techCode:{},
+                },
+                mounted:function(){
+                    $('#step3 select').formSelect();
+                    M.updateTextFields();
+                },
+                updated:function(){
+                    $('#step3 select').formSelect();
+                },
+                watch:{
+                    headerRow:function(newVal, oldVal){
+                        if(this.sheetData) {
+                            var headerRow = this.sheetData[newVal-1];
+                            var headerData = [];
+                            var obj = {};
+                            headerRow.forEach(function(data, index){
+                                obj = {index:index,name:data, gubun:"none"};
+                                headerData.push(obj);
+                            });
+                            this.headerData = headerData;
+                        }
+                    },
+                    sheetData:function(newVal, oldVal){
+                        console.log(newVal);
+                        if(newVal.length > 0) {
+                            var headerRow = newVal[this.headerRow-1];
+                            var headerData = [];
+                            var obj = {};
+                            headerRow.forEach(function(data, index){
+                                obj = {index:index,name:data, gubun:"none"};
+                                headerData.push(obj);
+                            });
+                            this.headerData = headerData;
+                        }
+                    },
+                    sheetName:function(newVal, oldVal){
+                        console.log(newVal);
+                    },
+                    headerData:function(newVal, oldVal){
+                        console.log(newVal);
+                    }
+                },
+                methods:{
+                    clear:function(){
+                        $("#step3").css("display","block");
+                        $("#step3").animate({
+                            "margin-left": "0px",
+                            "margin-right": "0px",
+                        }, 600);
+                    },
+                    addEvents:function(){
+                        $("#beforeStep3").off().click(function() {
+                            $("#step3").animate({
+                                "margin-left": "100%",
+                                "margin-right": "-100%",
+                            }, 600).promise().then(function(){
+                                $("#step3").css("display","none");
+                                step2Vue.clear();
+                            });
+                        });
+
+                        $("#nextStep3").off().click(function() {
+                            $("#step3").animate({
+                                "margin-left": "-100%",
+                                "margin-right": "100%",
+                            }, 600).promise().then(function(){
+                                $("#step3").css("display", "none");
+                                
+                                if(step3Vue.techCode.code == 'MOVAVG') {
+                                    stepProphet.init()
+                                } else {
+                                    step4Vue.init(step3Vue.purCode, step3Vue.techCode, step3Vue.headerData);                                    
+                                }
+                            });
+                        });
+                    },
+                    init:function(purCode, techCode){
+                        this.clear();
+                        this.addEvents();
+                        
+                        this.purCode = purCode;
+                        this.techCode = techCode;
+                    },
+                    fileSet:function(event){
+                        $("#loader").css('display', 'block');
+                        
+                        var rABS = true; // true: readAsBinaryString ; false: readAsArrayBuffer
+                        
+                        var files = event.target.files;
+                        var f = files[0];
+                        
+                        var reader = new FileReader();
+                        reader.onload = function(e) {
+                            var data = e.target.result;
+                            if(!rABS) data = new Uint8Array(data);
+                            var workbook = XLSX.read(data, {type: rABS ? 'binary' : 'array'});
+                            /* DO SOMETHING WITH workbook HERE */
+                            step3Vue.setWorkbook(workbook);
+                            
+                            $("#loader").css('display', 'none');
+                        };
+                        if(rABS) reader.readAsBinaryString(f); else reader.readAsArrayBuffer(f);
+                        
+                        this.sheetName = "";
+                        this.sheetData = [];
+                        
+                        $("#selectSheet").val("");
+                    },
+                    setWorkbook:function(wb){
+                        this.workbook = wb;
+                    },
+                    selectSheet:function(event){
+                        this.sheetName = event.target.value;
+                        this.sheetData = XLSX.utils.sheet_to_json(this.workbook.Sheets[this.sheetName], {header:1});
+                        this.showSheetData(this.sheetData);
+                    },
+                    showSheetData:function(data){
+                        var showData = data;
+                        if(data.length > 100 ) {
+                            showData = data.slice(0, 100)
+                        }
+                        var container = document.getElementById('excelGrid');
+                        var hot = new Handsontable(container, {
+                            data: showData,
+                            rowHeaders: true,
+                            colHeaders: true
+                        });
+                    },
+                    changeGubun:function(event){
+                        var target   = event.target;
+                        var index    = $("#"+target.id).data("index");
+                        
+                        this.headerData.forEach(function(data, i){
+                            if(data.index != index) {
+                                if(data.gubun == "label") {
+                                    data.gubun = "none";
+                                }
+                            }
+                        });
+                        
+                        return true;
+                    }
+                },
+            });
+            
+            /* 스탭4 학습 설정하기 */
+            step4Vue = new Vue({
+                el:"#step4",
+                delimiters: ['${', '}'],
+                data:{
+                    dataSplit:{train:70,test:10,valid:20},
+                    purCode:{},
+                    techCode:{},
+                    headerData:[],
+                    layer:{
+                        input:{act:'',out:1},
+                        hidden:{act:[], out:[]},
+                    },
+                    meta:{
+                        lr:0.01,
+                        loss:'',
+                        scale:'',
+                        shuffle:'',
+                        opti:'',
+                        batch:100,
+                        epoch:100,
+                        bias:1,
+                    }
+                },
+                mounted:function(){
+                    $('#step4 select').formSelect();
+                    M.updateTextFields();
+                },
+                updated:function(){
+                    $('#step4 select').formSelect();
+                    M.updateTextFields();
+                },
+                methods:{
+                    clear:function(){
+                        $("#step4").css("display","block");
+                        $("#step4").animate({
+                            "margin-left": "0px",
+                            "margin-right": "0px",
+                        }, 600).promise().then(function(){
+                            $('html, body').animate({
+                                scrollTop:$("#step4").offset().top-20,
+                            }, 600);
+                        });
+                    },
+                    addHiddenLayer:function(){
+                        this.layer.hidden.act.push('');
+                        this.layer.hidden.out.push(1);
+                    },
+                    removeHiddenLayer:function(i){
+                        console.log(i)
+                    },
+                    addEvents:function(){
+                        $("#beforeStep4").off().click(function() {
+                            $("#step4").animate({
+                                "margin-left": "100%",
+                                "margin-right": "-100%",
+                            }, 600).promise().then(function(){
+                                $("#step4").css("display","none");
+                                step3Vue.clear();
+                            });
+                        });
+
+                        $("#nextStep4").off().click(function() {
+                            $("#step4").animate({
+                                "margin-left": "-100%",
+                                "margin-right": "100%",
+                            }, 600).promise().then(function(){
+                                $("#step4").css("display", "none");
+                                step5Vue.init();
+                            });
+                        });
+                    },
+                    init:function(purCode, techCode, headerData){
+                        this.clear();
+                        this.addEvents();
+                        
+                        this.purCode = purCode;
+                        this.techCode = techCode;
+                        this.headerData = headerData;
+                    },
+                }
+            });
+            
+            /* 스탭5 머신러닝 */
+            step5Vue = new Vue({
+                el:"#step5",
+                delimiters: ['${', '}'],
+                data:{
+                    purCode:{},
+                    techCode:{},
+                    headerData:[],
+                    meta:{},
+                    layer:{},
+                    dataSplit:{},
+                    modelErr:{},
+                },
+                mounted:function(){
+                    
+                },
+                updated:function(){
+                    
+                },
+                methods:{
+                    clear:function(){
+                        $("#step5").css("display","block");
+                        $("#step5").animate({
+                            "margin-left": "0px",
+                            "margin-right": "0px",
+                        }, 600);
+                    },
+                    showDiv:function(newDiv, callback){
+                        $(newDiv).css("display", "block");
+                        $(newDiv).animate({
+                            "margin-top": "30px",
+                            "margin-bottom": "0px",
+                        }, 1000).promise().then(callback);                        
+                    },
+                    init:function(){
+                        $("#nav").css("display","none");
+                        this.clear();
+                        
+                        this.purCode = step1Vue.getSelectedCode();
+                        this.techCode= step2Vue.getSelectedCode();
+                        this.headerData = step3Vue.headerData;
+                        this.meta       = step4Vue.meta;
+                        this.layer      = step4Vue.layer;
+                        this.dataSplit  = step4Vue.dataSplit;
+                        
+                        socketMan.conn('http://localhost:80');
+                        socketMan.on('status', function(data){
+                            if(data == 'wait') {
+                                step5Vue.showDiv("#mlWait", function(){
+                                    $('html, body').animate({scrollTop : $("#mlWait").offset().top-50}, 600);
+                                });
+                            }
+                            if(data == 'run') {
+                                step5Vue.showDiv("#mlRun", function(){
+                                    socketMan.emit('sendData', {type:'dataSet',data:step3Vue.sheetData});
+                                    socketMan.emit('sendData', {type:'header',data:{row:step3Vue.headerRow,data:step3Vue.headerData}});
+                                    socketMan.emit('sendData', {type:'meta',  data:step4Vue.meta});
+                                    socketMan.emit('sendData', {type:'split',  data:step4Vue.dataSplit});
+                                    socketMan.emit('sendData', {type:'layer', data:step4Vue.layer});
+                                    socketMan.emit('sendData', {type:'code', data:{purCode:step5Vue.purCode, techCode:step5Vue.techCode}});
+                                    
+                                    $('html, body').animate({scrollTop : $("#mlRun").offset().top-100}, 600);
+                                });
+                            }
+                            if(data == 'makeDataSet') {
+                                step5Vue.showDiv("#mlDataMake", function(){
+                                    $('html, body').animate({scrollTop : $("#mlDataMake").offset().top-100}, 600);
+                                });
+                            }
+                            
+                            if(data == 'makeML') {
+                                step5Vue.showDiv("#mlMake", function(){
+                                    $('html, body').animate({scrollTop : $("#mlMake").offset().top-100}, 600);
+                                });
+                            }
+                            
+                            if(data == 'modelTrain') {
+                                step5Vue.showDiv("#mlTrain", function(){
+                                    $('html, body').animate({scrollTop : $("#mlTrain").offset().top-100}, 600);
+                                });
+                                
+                                var ctx = document.getElementById("trainChart").getContext('2d');
+
+                                var trainChart = new Chart(ctx, {
+                                    type: 'line',
+                                    data:{
+                                        labels:[],
+                                        datasets:[],
+                                    }
+                                })
+                                var colors = ['#ff0000','#0000ff'];
+                                var rowCnt = 0;
+
+                                socketMan.on('mlTrain', function(data){
+                                    if(trainChart.data.datasets.length == 0) {                                        
+                                        data.column.forEach(function(column, i){
+                                           var obj = {
+                                               label: column,
+                                               data:[],
+                                               fill:false,
+                                               borderColor:colors[i],
+                                               borderWidth:3,
+                                           }
+                                           trainChart.data.datasets.push(obj);
+                                        });
+                                    }
+                                    
+                                    data.data.forEach(function(obj, i){
+//                                        if(trainChart.data.datasets[i].data.length > 20) {
+//                                            trainChart.data.datasets[i].data.shift();
+//                                        }
+                                        trainChart.data.datasets[i].data.push(obj);
+                                    });
+                                    rowCnt = rowCnt + 1;
+                                    
+//                                    if(trainChart.data.labels.length > 20) {
+//                                        trainChart.data.labels.shift();
+//                                    }
+                                    
+                                    trainChart.data.labels.push(rowCnt);
+                                    trainChart.update();
+                                });
+                            }
+                            
+                            if(data == 'modelTest') {
+                                step5Vue.showDiv("#mlTest", function(){
+                                    $('html, body').animate({scrollTop : $("#mlTest").offset().top-100}, 600);
+                                });
+                                
+                                var ctx = document.getElementById("testChart").getContext('2d');
+                                    
+                                var testChart = new Chart(ctx, {
+                                    type: 'line',
+                                    data:{
+                                        labels:[],
+                                        datasets:[],
+                                    }
+                                });
+                                var colors = ['#ff0000','#0000ff']
+                                
+                                socketMan.on('mlTest', function(data){
+                                    if(testChart.data.datasets.length == 0) {                                        
+                                        data.column.forEach(function(column, i){
+                                           var obj = {
+                                               label: column,
+                                               data:[],
+                                               fill:false,
+                                               borderColor:colors[i],
+                                               borderWidth:3,
+                                           }
+                                           testChart.data.datasets.push(obj);
+                                        });
+                                    }
+                                    
+                                    data.data.forEach(function(obj, i){
+                                        testChart.data.datasets[i].data.push(obj);
+                                    });
+                                    testChart.data.labels.push(testChart.data.datasets[0].data.length);
+                                    testChart.update();
+                                });
+                            }
+                            if(data == 'modelErr') {
+                                step5Vue.showDiv("#mlErr", function(){
+                                    console.log('test');
+                                });
+                                
+                                socketMan.on('mlErr', function(data){
+                                    console.log(data);
+                                    step5Vue.modelErr = data;
+                                });
+                            }
+                            if(data == 'modelEnd') {
+                                console.log('test');
+                                step5Vue.showDiv("#mlEnd", function(){
+                                });
+                            }
+                        });
+                    },
+                }
+            });
+            
+            /* 이동평균용 학습 설정하기 */
+            stepProphet = new Vue({
+                el:"#stepProphet",
+                delimiters: ['${', '}'],
+                data:{
+                    purCode:{},
+                    techCode:{},
+                    headerData:[],
+                    meta:{},
+                    layer:{},
+                    dataSplit:{},
+                    modelErr:{},
+                },
+                mounted:function(){
+                },
+                updated:function(){
+                },
+                methods:{
+                    clear:function(){
+                        $("#stepProphet").css("display","block");
+                        $("#stepProphet").animate({
+                            "margin-left": "0px",
+                            "margin-right": "0px",
+                        }, 600).promise().then(function(){
+                            $('html, body').animate({
+                                scrollTop:$("#stepProphet").offset().top-20,
+                            }, 600);
+                        });
+                    },
+                    addEvents:function(){
+                        $("#beforeStepProphet").off().click(function() {
+                            $("#stepProphet").animate({
+                                "margin-left": "100%",
+                                "margin-right": "-100%",
+                            }, 600).promise().then(function(){
+                                $("#stepProphet").css("display","none");
+                                step3Vue.clear();
+                            });
+                        });
+                    },
+                    init:function(){
+                        this.clear();
+                        this.addEvents();
+                        
+                        this.purCode = step1Vue.getSelectedCode();
+                        this.techCode= step2Vue.getSelectedCode();
+                        this.headerData = step3Vue.headerData;
+                        
+                        socketMan.conn('http://localhost:3000');
+                        socketMan.on('status', function(data){
+                            if(data == 'wait') {
+                                step5Vue.showDiv("#pWait", function(){
+                                    $('html, body').animate({scrollTop : $("#pWait").offset().top-50}, 600);
+                                });
+                            }
+                            if(data == 'run') {
+                                step5Vue.showDiv("#pRun", function(){
+                                    socketMan.emit('sendData', {type:'dataSet',data:step3Vue.sheetData});
+                                    socketMan.emit('sendData', {type:'header',data:{row:step3Vue.headerRow,data:step3Vue.headerData}});
+                                    socketMan.emit('sendData', {type:'meta',  data:step4Vue.meta});
+                                    socketMan.emit('sendData', {type:'code', data:{purCode:stepProphet.purCode, techCode:stepProphet.techCode}});
+                                    
+                                    $('html, body').animate({scrollTop : $("#pRun").offset().top-100}, 600);
+                                });
+                            }
+                            if(data == 'makeDataSet') {
+                                step5Vue.showDiv("#pDataMake", function(){
+                                        $('html, body').animate({scrollTop : $("#pDataMake").offset().top-100}, 600);
+                                });
+                                var data;
+                                var real;
+                                socketMan.on('prophet', function(csv){
+                                    data = csvJSON(csv);
+                                    console.log(data);
+                                });
+                                
+                                socketMan.on('prophet_real', function(csv){
+                                    real = csvJSON(csv);
+                                    console.log(real);
+                                })
+                            }
+                        });
+                    },
+                }
+            });
+        });
+    </script>
+</head>
+
+<body class="blue-grey lighten-5">
+    <nav id="nav" style="display:none">
+        <div class="nav-wrapper blue lighten-3">
+            <div class="col s12">
+                <a href="#!" class="breadcrumb black-text">문제선택</a>
+            </div>
+        </div>
+    </nav>
+    <div id="loader" style="width:100%;height:100%;position:absolute;z-index:100;background-color:rgba(0,0,0,0.5); display:none">
+        <div class="spinner"></div>
+    </div>
+    <div id="main" style="overflow-x: hidden">
+        <!-- VUE 1 -->
+        <div id="step1" style="margin-left:100%;margin-right:-100%;display: none; margin-top:15%;">
+
+            <div class="container" style="margin-top:80px; margin-bottom:50px;">
+
+                <div class="grey lighten-5 z-depth-4" style="padding:30px;">
+                    <template v-for="index in codeLength" :key="index">
+
+                        <div v-if="index > 1 && index % 2 == 0" class="row">
+                            <div class="col s12 m6">
+                                <div :class="'card '+codeList[index-2].color+ ' lighten-4'" :data-code="codeList[index-2].code">
+                                    <div class="card-content">
+                                        <span class="card-title">
+                                            ${codeList[index-2].name}
+                                            <a href="#!" class="btn-floating btn-small scale-transition scale-out red lighten-1">
+                                                <i class="material-icons">check</i>
+                                            </a>
+                                        </span>
+                                        <p>${codeList[index-2].desc}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col s12 m6">
+                                <div :class="'card '+codeList[index-1].color+ ' lighten-4'" :data-code="codeList[index-1].code">
+                                    <div class="card-content">
+                                        <span class="card-title">
+                                            ${codeList[index-1].name}
+                                            <a href="#!" class="btn-floating btn-small scale-transition scale-out red lighten-1">
+                                                <i class="material-icons">check</i>
+                                            </a>
+                                        </span>
+                                        <p>${codeList[index-1].desc}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>                        
+                        <div v-else-if="index > Math.floor(codeLength/2) * 2">
+                            <div class="row">
+                                <div class="col s12 m6">
+                                    <div :class="'card '+codeList[index-1].color+ ' lighten-4'" :data-code="codeList[index-1].code">
+                                        <div class="card-content">
+                                            <span class="card-title">
+                                                ${codeList[index-1].name}
+                                                <a href="#!" class="btn-floating btn-small scale-transition scale-out red lighten-1">
+                                                    <i class="material-icons">check</i>
+                                                </a>
+                                            </span>
+                                            <p>${codeList[index-1].desc}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                    <div class="row">
+                        <div class="col s12 m12">
+                            <a id="nextStep1" class="waves-effect waves-light btn grey darken-1 " v-bind:class="selected.code?'':'disabled'" style="width:100%;height:50px;padding-top:7px;">
+                                <i class="material-icons right">chevron_right</i>
+                                <b>다음 단계</b>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="step2" style="margin-left:100%;margin-right:-100%;display: none;margin-top:15%;">
+            <div class="container" style="margin-top:80px; margin-bottom:50px;">
+                <div class="grey lighten-5 z-depth-4" style="padding:30px;">
+                    <template v-for="index in codeLength" :key="index">
+                        <div v-if="index > 1 && index % 2 == 0" class="row">
+                            <div class="col s12 m6">
+                                <div :class="'card ' + purCode.color + ' lighten-4'" :data-code="codeList[index-2].code">
+                                    <div class="card-content">
+                                        <span class="card-title">
+                                            ${codeList[index-2].name}
+                                            <a href="#!" class="btn-floating btn-small scale-transition scale-out red lighten-1">
+                                                <i class="material-icons">check</i>
+                                            </a>
+                                        </span>
+                                        <p>${codeList[index-2].desc}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col s12 m6">
+                                <div :class="'card ' + purCode.color + ' lighten-4'" :data-code="codeList[index-1].code">
+                                    <div class="card-content">
+                                        <span class="card-title">
+                                            ${codeList[index-1].name}
+                                            <a href="#!" class="btn-floating btn-small scale-transition scale-out red lighten-1">
+                                                <i class="material-icons">check</i>
+                                            </a>
+                                        </span>
+                                        <p>${codeList[index-1].desc}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>                        
+                        <div v-else-if="index > Math.floor(codeLength/2) * 2">
+                            <div class="row">
+                                <div class="col s12 m6">
+                                    <div :class="'card ' + purCode.color + ' lighten-4'" :data-code="codeList[index-1].code">
+                                        <div class="card-content">
+                                            <span class="card-title">
+                                                ${codeList[index-1].name}
+                                                <a href="#!" class="btn-floating btn-small scale-transition scale-out red lighten-1">
+                                                    <i class="material-icons">check</i>
+                                                </a>
+                                            </span>
+                                            <p>${codeList[index-1].desc}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <div class="row">
+                        <div class="col s6 m6">
+                            <a id="beforeStep2" class="waves-effect waves-light btn grey darken-1" style="width:100%;height:50px;padding-top:7px;">
+                                <i class="material-icons left">chevron_left</i>
+                                <b>이전 단계</b>
+                            </a>
+                        </div>
+                        <div class="col s6 m6">
+                            <a id="nextStep2" v-bind:class="selected.code?'':'disabled'" class="waves-effect waves-light btn grey darken-1" style="width:100%;height:50px;padding-top:7px;">
+                                <i class="material-icons right">chevron_right</i>
+                                <b>다음 단계</b>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="step3" style="margin-left:100%;margin-right:-100%;display: none;">
+            <div class="container" style="margin-top:80px; margin-bottom:50px;">
+                <div class="grey lighten-5 z-depth-4" style="padding:30px;">
+                    <form>
+                        <div class="row">
+                            <div class="input-field col s12">
+                               <div class="file-field input-field">
+                                  <div class="btn waves-effect waves-light grey darken-1">
+                                    <span><i class="material-icons">file_upload</i></span>
+                                    <input @change.prevent="fileSet" id="excelFile" type="file">
+                                  </div>
+                                  <div class="file-path-wrapper">
+                                    <input readonly class="file-path validate" type="text" placeholder="엑셀파일 업로드">
+                                  </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="input-field col s12">
+                                <template v-if="workbook">
+                                    <select id="selectSheet" @change="selectSheet">
+                                        <option value="" selected>엑셀 시트를 선택 하세요.</option>
+                                        <template v-for="sheet in workbook.SheetNames">
+                                            <option :value="sheet">${sheet}</option>
+                                        </template>
+                                    </select>
+                                    <label>시트선택</label>
+                                </template>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="input-field col s12">
+                                <input v-model="headerRow" id="headerRow" type="number" min="1">
+                                <label class="active" for="headerRow">헤더 행번호</label>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col s12">
+                                <table v-show="headerData.length > 0" class="highlight centered">
+                                    <colgroup>
+                                        <col style="width:30%;" />
+                                        <col style="width:70%;" />
+                                    </colgroup>
+                                    <thead class="blue lighten-4">
+                                        <tr>
+                                            <th>컬럼명</th>
+                                            <th>구분</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="blue lighten-5">
+                                        <tr v-for="header in headerData" :key="header.index">
+                                            <td>${header.name}</td>
+                                            <td>
+                                                <label style="margin-left:30px;">
+                                                    <input :name="header.index+'_rd'" :id="header.index+'_rd_in'" type="radio" value="input" v-model="header.gubun">
+                                                    <span>입력 컬럼</span>
+                                                </label>
+                                                <label style="margin-left:30px;">
+                                                    <input :data-index="header.index" @change.prevent="changeGubun" :name="header.index+'_rd'" :id="header.index+'_rd_out'" type="radio" value="label" v-model="header.gubun">
+                                                    <span>라벨 컬럼</span>
+                                                </label>
+                                                <label style="margin-left:30px;">
+                                                    <input checked :name="header.index+'_rd'" :id="header.index+'_rd_none'" type="radio" value="none" v-model="header.gubun">
+                                                    <span>사용안함</span>
+                                                </label>
+                                                
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col s12">
+                                <div style="overflow: hidden; width:100%;height:350px;" id="excelGrid"></div>
+                            </div>  
+                        </div>
+                        <div class="row">
+                            <div class="col s6 m6">
+                                <a id="beforeStep3" class="waves-effect waves-light btn grey darken-1" style="width:100%;height:50px;padding-top:7px;">
+                                    <i class="material-icons left">chevron_left</i>
+                                    <b>이전 단계</b>
+                                </a>
+                            </div>
+                            <div class="col s6 m6">
+                                <a id="nextStep3" v-bind:class="(headerData.length > 0 && sheetData.length > 0)?'':'disabled'" class="waves-effect waves-light btn grey darken-1" style="width:100%;height:50px;padding-top:7px;">
+                                    <i class="material-icons right">chevron_right</i>
+                                    <b>다음 단계</b>
+                                </a>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div id="step4" style="margin-left:100%;margin-right:-100%;display: none;">
+            <div class="container" style="margin-top:80px; margin-bottom:50px;">
+                <form>
+                    <div class="grey lighten-5 z-depth-4" style="padding:30px;">
+                        <div class="row">
+                            <div class="input-field col s6">
+                                <select v-model="meta.scale">
+                                    <option selected value="">스케일링 방법을 선택 해주세요.</option>
+                                    <option value="MMS">MIN-MAX 스케일링</option>
+                                </select>
+                                <label>데이터 스케일링</label>
+                            </div>
+                            <div class="input-field col s6">
+                                <select v-model="meta.shuffle">
+                                    <option selected value="">데이터 셔플 유무를 선택 해주세요.</option>
+                                    <option value="SHUFFLE">shuffle</option>
+                                    <option value="NONE">none</option>
+                                </select>
+                                <label>데이터 셔플</label>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="input-field col s4">
+                                <input id="st4TrainSet" type="number" min="1" max="100" v-model="dataSplit.train">
+                                <label for="st4TrainSet">훈련셋 크기(%)</label>
+                            </div>
+                            <div class="input-field col s4">
+                                <input id="st4TestSet" type="number" min="1" max="50" v-model="dataSplit.test">
+                                <label for="st4TestSet">테스트셋 크기(%)</label>
+                            </div>
+                            <div class="input-field col s4">
+                                <input id="st4ValidSet" type="number" min="1=" max="50" v-model="dataSplit.valid">
+                                <label for="st4ValidSet">검증셋 크기(%)</label>
+                            </div>
+                        </div>
+                        <div v-show="Number(dataSplit.train) + Number(dataSplit.test) + Number(dataSplit.valid) != 100" class="row red-text" style="margin-left:40%;margin-top:-50px;padding:0px;">
+                            데이터셋의 크기를 총합 100%으로 맞춰주세요.
+                        </div>
+                    </div>
+                    <div class="grey lighten-5 z-depth-4" style="margin-top:40px;padding:30px;">
+                        <div class="row">
+                            <div class="input-field col s6">
+                                <select v-model="meta.loss">
+                                    <option selected value="">사용하실 손실 함수를 선택 해주세요.</option>
+                                    <option value="mse">MSE</option>
+                                    <option value="categorical_crossentropy">Categorical Crossentropy</option>
+                                </select>
+                                <label>손실 함수</label>
+                            </div>
+                            <div class="input-field col s6">
+                                <select v-model="meta.opti">
+                                    <option selected value="">사용하실 옵티마이저를 선택 해주세요.</option>
+                                    <option value="adam">ADAM</option>
+                                    <option value="rmsprop">RMSprop</option>
+                                    <option value="sgd">SGD</option>
+                                </select>
+                                <label>옵티마이저</label>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="input-field col s6">
+                                <input v-model="meta.batch" id="st4Batch" type="number" min="1" value="100">
+                                <label for="st4Batch">배치사이즈</label>
+                            </div>
+                            <div class="input-field col s6">
+                                <input v-model="meta.epoch" id="st4Epoch" type="number" min="1" value="100">
+                                <label for="st4Epoch">에포크</label>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="input-field col s12">
+                                <input v-model="meta.lr" id="st4lr" type="text" value="0.01">
+                                <label for="st4lr">학습주기</label>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="row" style="margin-bottom:-10px;">
+                                <div class="col s12 center">
+                                    <h5><b>모델 레이어 구조</b></h5>
+                                </div>
+                            </div>
+                            <div class="col s3">
+                                <div class="card white z-depth-2" style="border-radius:30px;min-height:500px;">
+                                    <div class="card-content dark-text">
+                                        <span class="card-title center" style="margin-bottom:30px;"><b>입력층</b></span>
+                                        <template v-for="data in headerData">
+                                            <div v-if="data.gubun=='input'" class="row">
+                                                <div class="col s12 blue-grey lighten-5 z-depth-1 center" style="height:40px;border-radius:20px;padding-top:5px;">
+                                                    <b>${data.name}</b>
+                                                </div>
+                                            </div>
+                                        </template>
+                                        <div class="row" v-if="techCode.deep"> 
+                                            <div class="input-field col s6">
+                                                <select v-model="layer.input.act">
+                                                    <option value="">선택</option>
+                                                    <option value="relu">relu</option>
+                                                </select>
+                                                <label>활성화함수</label>
+                                            </div>
+                                            <div class="input-field col s6">
+                                                <input id="inputOut" type="number" v-model="layer.input.out">
+                                                <label for="inputOut">출력뉴런 갯수</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col s6">
+                                <template v-if="techCode.deep">
+                                    <div class="card white z-depth-2" style="border-radius:30px;min-height:500px;">
+                                        <div class="card-content dark-text">
+                                            <span class="card-title center" style="margin-bottom:30px;"><b>은닉층</b>
+                                                <a @click="addHiddenLayer()" class="btn-floating btn-smal waves-effect waves-light blue lighten-4"><i class="material-icons">add</i></a>
+                                            </span>
+                                            <div class="row center">
+                                                <div v-if="(12 - (layer.hidden.act.length * 4 ) >0)&&(layer.hidden.act.length > 0)" :class="'col s' + (12-(layer.hidden.act.length*4))/2"></div>
+                                                <template v-for="index in layer.hidden.act.length">
+                                                    <div class="col s4" style="height:90%">
+                                                        <div class="card white z-depth-2">
+                                                            <div class="card-content dark-text">
+                                                                <div class="row">
+                                                                    <div class="input-field col s6">
+                                                                        <input :id="'hidden'+index" type="number" v-model="layer.hidden.out[index-1]">
+                                                                        <label style="font-size:.7rem" :for="'hidden'+index">뉴런 갯수</label>
+                                                                    </div>
+                                                                    <div class="input-field col s6">
+                                                                        <select v-model="layer.hidden.act[index-1]">
+                                                                            <option value="">선택</option>
+                                                                            <option value="relu">relu</option>
+                                                                        </select>
+                                                                        <label style="font-size:.5rem">활성화함수</label>
+                                                                    </div>
+                                                                </div>
+                                                                <a @click="removeHiddenLayer(index-1)" class="btn-floating btn-smal waves-effect waves-light blue lighten-4">
+                                                                    <i class="material-icons">delete</i>
+                                                                </a>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                            <div class="col s3">
+                                <div class="card white z-depth-2" style="border-radius:30px;min-height:500px;">
+                                    <div class="card-content dark-text">
+                                        <span class="card-title center" style="margin-bottom:30px;"><b>출력층</b></span>
+                                        <template v-for="data in headerData">
+                                            <div v-if="data.gubun=='label'" class="row">
+                                                <div class="col s12 blue-grey lighten-5 z-depth-1 center" style="height:40px;border-radius:20px;padding-top:5px;">
+                                                    <b>${data.name}</b>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col s6 m6">
+                                <a id="beforeStep4" class="waves-effect waves-light btn grey darken-1" style="width:100%;height:50px;padding-top:7px;">
+                                    <i class="material-icons left">chevron_left</i>
+                                    <b>이전 단계</b>
+                                </a>
+                            </div>
+                            <div class="col s6 m6">
+                                <a id="nextStep4" class="waves-effect waves-light btn grey darken-1" style="width:100%;height:50px;padding-top:7px;">
+                                    <i class="material-icons right">chevron_right</i>
+                                    <b>다음 단계</b>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div id="step5" style="margin-left:100%;margin-right:-100%;display: none;">
+            <div class="container" style="padding:50px;height:2800px;">
+                <div id="mlWait" class="card white z-depth-3" style="margin-top:100%; margin-bottom:-100%;display: none;">
+                    <div class="card-content">
+                        <span class="card-title center">
+                            <b>머신러닝 모듈 로딩</b>
+                        </span>
+                    </div>
+                </div>
+                <div id="mlRun" class="card white z-depth-3" style="margin-top:100%; margin-bottom:-100%;display: none;">
+                    <div class="card-content">
+                        <span class="card-title center">
+                            <b>머신러닝 모듈 실행</b>
+                        </span>
+                    </div>
+                </div>
+                <div id="mlDataMake" class="card white z-depth-3" style="margin-top:100%; margin-bottom:-100%;display: none;">
+                    <div class="card-content">
+                        <span class="card-title center">
+                            <b>데이터셋 및 모델 정보 전송</b>
+                        </span>
+                    </div>
+                </div>
+                <div id="mlMake" class="card white z-depth-3" style="margin-top:100%; margin-bottom:-100%;display: none;">
+                    <div class="card-content">
+                        <span class="card-title center">
+                            <b>머신러닝 모델 생성</b>
+                        </span>
+                    </div>
+                </div>
+                <div id="mlTrain" class="card white z-depth-3" style="margin-top:100%; margin-bottom:-100%;display: none;">
+                    <div class="card-content">
+                        <span class="card-title center">
+                            <b>모델 학습</b>
+                        </span>
+                        <div class="row">
+                            <div class="col s12">
+                                <canvas id="trainChart">
+                                </canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="mlTest" class="card white z-depth-3" style="margin-top:100%; margin-bottom:-100%;display: none;">
+                    <div class="card-content">
+                        <span class="card-title center">
+                            <b>모델 테스트</b>
+                        </span>
+                        <div class="row">
+                            <div class="col s12">
+                                <canvas id="testChart">
+                                </canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="mlErr" class="card white z-depth-3" style="margin-top:100%; margin-bottom:-100%;display: none;">
+                    <div class="card-content">
+                        <span class="card-title center">
+                            <b>모델 오차</b>
+                        </span>
+                        <div class="row">
+                            <div class="col s3">
+                                <div class="card white z-depth-2">
+                                    <div class="card-content center">
+                                        <span class="card-title center">최소 오차값</span>
+                                        <b class="center">${modelErr.min_err_val}</b>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col s3">
+                                <div class="card white z-depth-2">
+                                    <div class="card-content center">
+                                        <span class="card-title center">최대 오차값</span>
+                                        <b class="center">${modelErr.max_err_val}</b>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col s3">
+                                <div class="card white z-depth-2">
+                                    <div class="card-content center">
+                                        <span class="card-title center">평균 오차값</span>
+                                        <b class="center">${modelErr.avg_err_val}</b>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col s3">
+                                <div class="card white z-depth-2">
+                                    <div class="card-content center">
+                                        <span class="card-title center">오차값 표준 편차</span>
+                                        <b class="center">${modelErr.std_err_val}</b>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="mlEnd" class="card white z-depth-3" style="margin-top:100%; margin-bottom:-100%;display: none;">
+                    <div class="card-content">
+                        <span class="card-title center">
+                            <b><a href="/">돌아가기</a></b>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="stepProphet" style="margin-left:100%;margin-right:-100%;display: none;">
+            <div class="container" style="padding:50px;height:2800px;">
+                <div id="pWait" class="card white z-depth-3" style="margin-top:100%; margin-bottom:-100%;display: none;">
+                    <div class="card-content">
+                        <span class="card-title center">
+                            <b>머신러닝 모듈 로딩</b>
+                        </span>
+                    </div>
+                </div>
+                <div id="pRun" class="card white z-depth-3" style="margin-top:100%; margin-bottom:-100%;display: none;">
+                    <div class="card-content">
+                        <span class="card-title center">
+                            <b>머신러닝 모듈 실행</b>
+                        </span>
+                    </div>
+                </div>
+                <div id="pDataMake" class="card white z-depth-3" style="margin-top:100%; margin-bottom:-100%;display: none;">
+                    <div class="card-content">
+                        <span class="card-title center">d
+                            <b>데이터셋 및 모델 정보 전송</b>
+                        </span>
+                    </div>
+                </div>
+                <div id="pResult" class="card white z-depth-3" style="margin-top:100%; margin-bottom: -100%; display: none;">
+                    <div class="card-content">
+                        <span class="card-title center">
+                            <b>예측 결과</b>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
